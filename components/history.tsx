@@ -1,7 +1,10 @@
+'use client'
+
+import { useTransition } from 'react'
+import { useRouter } from 'next/navigation'
 import {
   Sheet,
   SheetContent,
-  SheetFooter,
   SheetHeader,
   SheetTitle,
   SheetTrigger
@@ -9,19 +12,31 @@ import {
 import { Button } from '@/components/ui/button'
 import { ChevronLeft, Menu } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import HistoryItem from './history-item'
-import { Chat } from '@/lib/types'
 import { History as HistoryIcon } from 'lucide-react'
-import { ClearHistory } from './clear-history'
+import { Suspense } from 'react'
+import { HistorySkeleton } from './history-skelton'
+import { useAppState } from '@/lib/utils/app-state'
 
 type HistoryProps = {
   location: 'sidebar' | 'header'
-  chats: Chat[]
+  children?: React.ReactNode
 }
 
-export function History({ location, chats }: HistoryProps) {
+export function History({ location, children }: HistoryProps) {
+  const router = useRouter()
+  const [isPending, startTransition] = useTransition()
+  const { isGenerating, setIsGenerating } = useAppState()
+
+  const onOpenChange = (open: boolean) => {
+    if (open) {
+      startTransition(() => {
+        router.refresh()
+      })
+    }
+  }
+
   return (
-    <Sheet>
+    <Sheet onOpenChange={onOpenChange}>
       <SheetTrigger asChild>
         <Button
           variant="ghost"
@@ -29,6 +44,7 @@ export function History({ location, chats }: HistoryProps) {
           className={cn({
             'rounded-full text-foreground/30': location === 'sidebar'
           })}
+          disabled={isGenerating}
         >
           {location === 'header' ? <Menu /> : <ChevronLeft size={16} />}
         </Button>
@@ -40,20 +56,9 @@ export function History({ location, chats }: HistoryProps) {
             History
           </SheetTitle>
         </SheetHeader>
-        <div className="my-2 overflow-y-auto h-[calc(100vh-7.5rem)]">
-          {!chats?.length ? (
-            <div className="text-foreground/30 text-sm text-center py-4">
-              No search history
-            </div>
-          ) : (
-            chats?.map((chat: Chat) => (
-              chat && <HistoryItem key={chat.id} chat={chat} />
-            ))
-          )}
+        <div className="my-2 h-full pb-12 md:pb-10">
+          <Suspense fallback={<HistorySkeleton />}>{children}</Suspense>
         </div>
-        <SheetFooter>
-          <ClearHistory empty={!chats?.length} />
-        </SheetFooter>
       </SheetContent>
     </Sheet>
   )
