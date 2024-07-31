@@ -1,22 +1,21 @@
 import React from 'react'
 import { History } from './history'
-import { getChats } from '@/lib/actions/chat'
-import { cache } from 'react'
+import { HistoryList } from './history-list'
 
 type HistoryContainerProps = {
   location: 'sidebar' | 'header'
 }
-const loadChats = cache(async (userId?: string) => {
-  return await getChats(userId)
-})
 
 const HistoryContainer: React.FC<HistoryContainerProps> = async ({
   location
 }) => {
-  const chats = await loadChats('anonymous')
   return (
-    <div className="sm:hidden block">
-      <History location={location} chats={chats} />
+    <div
+      className={location === 'header' ? 'block sm:hidden' : 'hidden sm:block'}
+    >
+      <History location={location}>
+        <HistoryList userId="anonymous" />
+      </History>
     </div>
   )
 }
