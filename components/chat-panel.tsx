@@ -12,13 +12,19 @@ import { EmptyScreen } from './empty-screen'
 import Textarea from 'react-textarea-autosize'
 import { generateId } from 'ai'
 import { useAppState } from '@/lib/utils/app-state'
+import { ModelSelector } from './model-selector'
+import { models } from '@/lib/types/models'
+import { useLocalStorage } from '@/lib/hooks/use-local-storage'
+import { getDefaultModelId } from '@/lib/utils'
+import { toast } from 'sonner'
 
 interface ChatPanelProps {
   messages: UIState
   query?: string
+  onModelChange?: (id: string) => void
 }
 
-export function ChatPanel({ messages, query }: ChatPanelProps) {
+export function ChatPanel({ messages, query, onModelChange }: ChatPanelProps) {
   const [input, setInput] = useState('')
   const [showEmptyScreen, setShowEmptyScreen] = useState(false)
   const [, setMessages] = useUIState<typeof AI>()
@@ -28,6 +34,24 @@ export function ChatPanel({ messages, query }: ChatPanelProps) {
   const router = useRouter()
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const isFirstRender = useRef(true) // For development environment
+
+  const [selectedModelId, setSelectedModelId] = useLocalStorage<string>(
+    'selectedModel',
+    getDefaultModelId(models)
+  )
+
+  const [isComposing, setIsComposing] = useState(false) // Composition state
+  const [enterDisabled, setEnterDisabled] = useState(false) // Disable Enter after composition ends
+
+  const handleCompositionStart = () => setIsComposing(true)
+
+  const handleCompositionEnd = () => {
+    setIsComposing(false)
+    setEnterDisabled(true)
+    setTimeout(() => {
+      setEnterDisabled(false)
+    }, 300)
+  }
 
   async function handleQuerySubmit(query: string, formData?: FormData) {
     setInput(query)
@@ -42,11 +66,18 @@ export function ChatPanel({ messages, query }: ChatPanelProps) {
       }
     ])
 
-    // Submit and get response message
+    // Use existing formData or create new one
     const data = formData || new FormData()
+
+    // Add or update the model information
+    const modelString = selectedModelId
+    data.set('model', modelString)
+
+    // Add or update the input query if not already present
     if (!formData) {
-      data.append('input', query)
+      data.set('input', query)
     }
+
     const responseMessage = await submit(data)
     setMessages(currentMessages => [...currentMessages, responseMessage])
   }
@@ -54,7 +85,14 @@ export function ChatPanel({ messages, query }: ChatPanelProps) {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const formData = new FormData(e.currentTarget)
-    await handleQuerySubmit(input, formData)
+    try {
+      await handleQuerySubmit(input, formData)
+    } catch (error) {
+      console.error('Error submitting form:', error)
+      toast.error(`${error}`)
+
+      handleClear()
+    }
   }
 
   // if query is not empty, submit the query
@@ -119,26 +157,36 @@ export function ChatPanel({ messages, query }: ChatPanelProps) {
     >
       <form onSubmit={handleSubmit} className="max-w-2xl w-full px-6">
         <div className="relative flex items-center w-full">
+          <ModelSelector
+            selectedModelId={selectedModelId}
+            onModelChange={id => {
+              setSelectedModelId(id)
+              onModelChange?.(id)
+            }}
+          />
           <Textarea
             ref={inputRef}
             name="input"
             rows={1}
             maxRows={5}
             tabIndex={0}
+            onCompositionStart={handleCompositionStart}
+            onCompositionEnd={handleCompositionEnd}
             placeholder="Ask a question..."
             spellCheck={false}
             value={input}
-            className="resize-none w-full min-h-12 rounded-fill bg-muted border border-input pl-4 pr-10 pt-3 pb-1 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50'"
+            className="resize-none w-full min-h-12 rounded-fill bg-muted border border-input pl-4 pr-10 pt-3 pb-1 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
             onChange={e => {
               setInput(e.target.value)
               setShowEmptyScreen(e.target.value.length === 0)
             }}
             onKeyDown={e => {
-              // Enter should submit the form
+              // Enter should submit the form, but disable it right after IME input confirmation
               if (
                 e.key === 'Enter' &&
                 !e.shiftKey &&
-                !e.nativeEvent.isComposing
+                !isComposing && // Not in composition
+                !enterDisabled // Not within the delay after confirmation
               ) {
                 // Prevent the default action to avoid adding a new line
                 if (input.trim().length === 0) {
